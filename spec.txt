@@ -1,0 +1,80 @@
+Basic Server-Client Communication (20pts)
+	●Server (10pts)
+		○Server can receive messages from the client.
+		○Server can respond to client messages.
+	●Client (10pts)
+		○Client can send messages to the server.
+		○Client can receive responses from the server.
+	●In Phase 1, implementing a thread pool / multithreaded server is not required.
+	Multithread server (15pts)
+	●Create a high-performance multithreaded server that can handle up to 10 concurrent connections using a worker pool approach.
+	●This server should be implemented using POSIX threads (pthread) and worker pool design pattern.
+	●Do not use fork() for process creation.
+
+Authentication Features (20pts)
+	●User Registration (5pts)
+	●User Login (5pts)
+		○During login, the client must provide its listening port to the server.
+	●User Logout (5pts)
+	●List Online Users (5pts)
+	●Full credit requires basic exception handling (e.g., unknown commands, duplicate registration/login, invalid port numbers).
+
+Sending Chat Messages (15pts)
+	●Sending Chat Messages (15pts) 
+		○The system must implement P2P chatting.
+		○Messages are sent directly from client to client; the server is used only for discovery (online list, IP/port lookup).
+	●Hints
+		○Client should create a listening socket to receive incoming messages.
+		○Clients should inform the server about their listening port upon connection.
+		○Clients should obtain other clients’ IP addresses and ports from the server.
+	●Requirements
+		○While in the chatroom, both sides can exchange messages.
+		○Full credit requires basic exception handling
+
+Message Encryption with OpenSSL (15pts)
+	●Base requirement — 10 pts 
+		○Implement a secure communication system for both client-to-client and client-to-server interactions.
+		○Symmetric and asymmetric encryption are both accepted.
+	●Bonus — 5 pts (session key freshness)
+		○Each connection establishes a fresh symmetric session key that’s unknown to anyone except the two peers.
+		○You may take inspiration from TLS key establishment.
+
+Group chatting (15pts)
+	●Basic — 10 pts
+		○Implement a group chatroom (relay mode).
+		○Clients send messages to the server, which relays them to all members of the room.
+		○Messages should appear in order.
+		○Encryption is required.
+	●Bonus — 5 pts (privacy + rekey on membership change)
+		○The server must not be able to decrypt message content(metadata such as room ID, sender ID, timestamps may remain in cleartext).
+		○Change the group key whenever membership changes (join or leave).
+
+Transfer files (10pts)
+	●Implement a file transfer feature based on existing communication system.
+	●Requirements
+		○Send and receive files in chunks.
+		○Receiver must be able to download the file after transfer.
+		○Need encryption with OpenSSL
+		○You are only allowed to use standard library and POSIX library. 
+		○Transmission does not have to occur inside the chatroom.
+
+Audio/Video Streaming (10pts)(Bonus)
+	●Develop a frame-based streaming feature for audio or video files.
+	●Requirements
+		○Sender: Implement file selection and frame-based transmission.
+		○Receiver: Implement frame reception, reassembly, and real-time playback/display.
+		○You are allowed to use any library.
+		○Encryption is optional.
+		○Implement either video or audio streaming.
+		○Transmission does not have to occur inside the chatroom.
+
+Requirements
+	●Only C / C++ (Unix/Linux Socket Programming)
+	●Accepted Library for socket programming
+		○#include <sys/socket.h>
+		○#include <netinet/in.h>
+		○#include <arpa/inet.h>
+	●Your README file must include
+		○Compilation instructions
+		○Usage guide
+		○Any additional information necessary to run your project
