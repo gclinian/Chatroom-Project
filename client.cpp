@@ -1,11 +1,11 @@
 /**
  * Secure Chat Client
- * 實作功能：
- * 1. 用戶註冊/登入/登出
- * 2. P2P 聊天
- * 3. 群組聊天
- * 4. 檔案傳輸
- * 5. OpenSSL 加密通訊
+ * Features:
+ * 1. User registration / login / logout
+ * 2. P2P chat
+ * 3. Group chat
+ * 4. File transfer
+ * 5. Encrypted communication with OpenSSL
  */
 
 #include <iostream>
@@ -44,7 +44,7 @@
 #define AES_IV_SIZE 16
 #define FILE_CHUNK_SIZE 4096
 
-// ==================== 資料結構 ====================
+// ==================== Data Structures ====================
 
 struct PeerSession {
     std::string username;
@@ -63,7 +63,7 @@ struct GroupInfo {
     int key_version;
 };
 
-// ==================== 全域變數 ====================
+// ==================== Globals ====================
 
 int server_socket = -1;
 int listen_socket = -1;
@@ -84,21 +84,21 @@ std::mutex server_send_mutex;
 
 std::atomic<bool> client_running(true);
 
-// 用於同步等待伺服器回應
+// Used to synchronously wait for server responses
 std::queue<std::string> response_queue;
 std::mutex response_mutex;
 std::condition_variable response_cv;
 
 EVP_PKEY* server_public_key = nullptr;
 
-// ==================== 加密函式 ====================
+// ==================== Crypto Helpers ====================
 
 void init_openssl() {
     OpenSSL_add_all_algorithms();
     ERR_load_crypto_strings();
 }
 
-// AES-256-CBC 加密
+// AES-256-CBC encryption
 std::string aes_encrypt(const std::string& plaintext, 
                         const unsigned char* key, 
                         const unsigned char* iv) {
@@ -130,7 +130,7 @@ std::string aes_encrypt(const std::string& plaintext,
     return std::string((char*)ciphertext.data(), ciphertext_len);
 }
 
-// AES-256-CBC 解密
+// AES-256-CBC decryption
 std::string aes_decrypt(const std::string& ciphertext, 
                         const unsigned char* key, 
                         const unsigned char* iv) {
@@ -162,7 +162,7 @@ std::string aes_decrypt(const std::string& ciphertext,
     return std::string((char*)plaintext.data(), plaintext_len);
 }
 
-// RSA 加密 (用於加密 session key 給伺服器)
+// RSA encryption (encrypts the session key sent to the server)
 std::string rsa_encrypt(const std::string& plaintext, EVP_PKEY* pubkey) {
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(pubkey, nullptr);
     if (!ctx) return "";
@@ -195,7 +195,7 @@ std::string rsa_encrypt(const std::string& plaintext, EVP_PKEY* pubkey) {
     return std::string((char*)out.data(), outlen);
 }
 
-// Base64 編碼
+// Base64 encode
 std::string base64_encode(const std::string& input) {
     BIO* bio = BIO_new(BIO_s_mem());
     BIO* b64 = BIO_new(BIO_f_base64());
@@ -212,7 +212,7 @@ std::string base64_encode(const std::string& input) {
     return result;
 }
 
-// Base64 解碼
+// Base64 decode
 std::string base64_decode(const std::string& input) {
     BIO* bio = BIO_new_mem_buf(input.c_str(), input.size());
     BIO* b64 = BIO_new(BIO_f_base64());
@@ -227,12 +227,12 @@ std::string base64_decode(const std::string& input) {
     return std::string(buffer.data(), len);
 }
 
-// 生成隨機金鑰
+// Generate a random key
 void generate_random_key(unsigned char* key, int size) {
     RAND_bytes(key, size);
 }
 
-// ==================== 訊息傳送/接收 ====================
+// ==================== Send / Receive ====================
 
 void send_plain(int socket_fd, const std::string& message) {
     std::string to_send = message + "\n";
@@ -286,7 +286,7 @@ std::string receive_encrypted(int socket_fd,
     return aes_decrypt(encrypted, key, iv);
 }
 
-// 等待伺服器回應 (從 response_queue 取得)
+// Wait for a server response (from response_queue)
 std::string wait_for_response(int timeout_ms = 5000) {
     std::unique_lock<std::mutex> lock(response_mutex);
     if (response_cv.wait_for(lock, std::chrono::milliseconds(timeout_ms), 
@@ -295,12 +295,12 @@ std::string wait_for_response(int timeout_ms = 5000) {
         response_queue.pop();
         return response;
     }
-    return "";  // 超時
+    return "";  // Timeout
 }
 
-// ==================== P2P 聊天函式 ====================
+// ==================== P2P Chat ====================
 
-// 連接到 peer
+// Connect to a peer
 bool connect_to_peer(const std::string& username, const std::string& ip, int port) {
     int peer_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (peer_socket < 0) {
@@ -320,19 +320,19 @@ bool connect_to_peer(const std::string& username, const std::string& ip, int por
         return false;
     }
     
-    // 生成 session key
+    // Generate a session key
     unsigned char session_key[AES_KEY_SIZE];
     unsigned char session_iv[AES_IV_SIZE];
     generate_random_key(session_key, AES_KEY_SIZE);
     generate_random_key(session_iv, AES_IV_SIZE);
     
-    // 發送握手訊息 (P2P 簡化版：直接交換金鑰)
+    // Send handshake (simplified P2P: exchange the key directly)
     std::string key_data = std::string((char*)session_key, AES_KEY_SIZE) + 
                            std::string((char*)session_iv, AES_IV_SIZE);
     std::string handshake = "P2P_HELLO:" + my_username + ":" + base64_encode(key_data);
     send_plain(peer_socket, handshake);
     
-    // 接收確認
+    // Receive acknowledgment
     std::string response = receive_line(peer_socket);
     if (response != "P2P_READY") {
         std::cerr << "Peer handshake failed" << std::endl;
@@ -340,7 +340,7 @@ bool connect_to_peer(const std::string& username, const std::string& ip, int por
         return false;
     }
     
-    // 儲存連線
+    // Store the connection
     {
         std::lock_guard<std::mutex> lock(peers_mutex);
         PeerSession session;
@@ -354,7 +354,7 @@ bool connect_to_peer(const std::string& username, const std::string& ip, int por
         peer_sessions[username] = session;
     }
     
-    // 啟動接收執行緒
+    // Start the receiver thread
     std::thread([username, peer_socket, session_key, session_iv]() {
         unsigned char key[AES_KEY_SIZE];
         unsigned char iv[AES_IV_SIZE];
@@ -368,7 +368,7 @@ bool connect_to_peer(const std::string& username, const std::string& ip, int por
             std::string message = receive_encrypted(peer_socket, key, iv);
             if (message.empty()) break;
             
-            // 安全的前綴檢查
+            // Safe prefix check
             if (message.length() >= 4 && message.substr(0, 4) == "MSG:") {
                 std::string content = message.substr(4);
                 std::lock_guard<std::mutex> lock(io_mutex);
@@ -396,7 +396,7 @@ bool connect_to_peer(const std::string& username, const std::string& ip, int por
                 if (current_file && current_file->is_open()) {
                     std::string chunk = base64_decode(message.substr(10));
                     current_file->write(chunk.c_str(), chunk.size());
-                    current_file->flush();  // 確保寫入磁碟
+                    current_file->flush();  // Make sure data hits disk
                 }
             }
             else if (message == "FILEEND") {
@@ -435,7 +435,7 @@ bool connect_to_peer(const std::string& username, const std::string& ip, int por
     return true;
 }
 
-// 發送 P2P 訊息
+// Send a P2P message
 void send_p2p_message(const std::string& username, const std::string& message) {
     std::lock_guard<std::mutex> lock(peers_mutex);
     
@@ -450,13 +450,13 @@ void send_p2p_message(const std::string& username, const std::string& message) {
                    it->second.session_key, it->second.session_iv);
 }
 
-// 發送檔案
+// Send a file
 void send_file(const std::string& username, const std::string& filepath) {
     int peer_socket;
     unsigned char session_key[AES_KEY_SIZE];
     unsigned char session_iv[AES_IV_SIZE];
     
-    // 只在取得資訊時持有鎖
+    // Hold the lock only while reading peer info
     {
         std::lock_guard<std::mutex> lock(peers_mutex);
         auto it = peer_sessions.find(username);
@@ -475,26 +475,26 @@ void send_file(const std::string& username, const std::string& filepath) {
         return;
     }
     
-    // 取得檔案大小
+    // Get file size
     file.seekg(0, std::ios::end);
     size_t file_size = file.tellg();
     file.seekg(0, std::ios::beg);
     
-    // 取得檔案名稱
+    // Get file name
     std::string filename = filepath;
     size_t pos = filepath.find_last_of("/\\");
     if (pos != std::string::npos) {
         filename = filepath.substr(pos + 1);
     }
     
-    // 發送檔案資訊
+    // Send file metadata
     std::string file_info = "FILEINFO:" + filename + ":" + std::to_string(file_size);
     send_encrypted(peer_socket, file_info, session_key, session_iv);
     
-    // 短暫延遲確保對方準備好接收
+    // Brief delay so the peer is ready to receive
     usleep(10000);  // 10ms
     
-    // 發送檔案內容
+    // Send file contents
     char buffer[FILE_CHUNK_SIZE];
     size_t total_sent = 0;
     
@@ -510,25 +510,25 @@ void send_file(const std::string& username, const std::string& filepath) {
         total_sent += bytes_read;
         std::cout << "\rSending: " << (total_sent * 100 / file_size) << "%" << std::flush;
         
-        // 小延遲避免發送過快
+        // Small delay to avoid sending too fast
         usleep(1000);  // 1ms
     }
     
-    // 短暫延遲確保所有 chunks 都已發送
+    // Brief delay to make sure all chunks are sent
     usleep(10000);  // 10ms
     
-    // 發送完成訊號
+    // Send completion signal
     send_encrypted(peer_socket, "FILEEND", session_key, session_iv);
     
     std::cout << "\nFile sent successfully: " << filename << std::endl;
     file.close();
 }
 
-// ==================== 接聽執行緒 ====================
+// ==================== Listener Threads ====================
 
-// 處理 P2P 連入連線
+// Handle an incoming P2P connection
 void handle_peer_connection(int peer_socket) {
-    // 接收握手
+    // Receive handshake
     std::string handshake = receive_line(peer_socket);
     if (handshake.substr(0, 10) != "P2P_HELLO:") {
         close(peer_socket);
@@ -549,10 +549,10 @@ void handle_peer_connection(int peer_socket) {
     memcpy(session_key, key_data.c_str(), AES_KEY_SIZE);
     memcpy(session_iv, key_data.c_str() + AES_KEY_SIZE, AES_IV_SIZE);
     
-    // 回應確認
+    // Send acknowledgment
     send_plain(peer_socket, "P2P_READY");
     
-    // 儲存連線
+    // Store the connection
     {
         std::lock_guard<std::mutex> lock(peers_mutex);
         PeerSession session;
@@ -570,7 +570,7 @@ void handle_peer_connection(int peer_socket) {
         std::cout << "> " << std::flush;
     }
     
-    // 接收訊息
+    // Receive messages
     std::ofstream* current_file = nullptr;
     std::string current_filename;
     
@@ -578,7 +578,7 @@ void handle_peer_connection(int peer_socket) {
         std::string message = receive_encrypted(peer_socket, session_key, session_iv);
         if (message.empty()) break;
         
-        // 安全的前綴檢查
+        // Safe prefix check
         if (message.length() >= 4 && message.substr(0, 4) == "MSG:") {
             std::string content = message.substr(4);
             std::lock_guard<std::mutex> lock(io_mutex);
@@ -606,7 +606,7 @@ void handle_peer_connection(int peer_socket) {
             if (current_file && current_file->is_open()) {
                 std::string chunk = base64_decode(message.substr(10));
                 current_file->write(chunk.c_str(), chunk.size());
-                current_file->flush();  // 確保寫入磁碟
+                current_file->flush();  // Make sure data hits disk
             }
         }
         else if (message == "FILEEND") {
@@ -628,7 +628,7 @@ void handle_peer_connection(int peer_socket) {
         delete current_file;
     }
     
-    // 清理連線
+    // Clean up the connection
     {
         std::lock_guard<std::mutex> lock(peers_mutex);
         peer_sessions.erase(peer_username);
@@ -643,7 +643,7 @@ void handle_peer_connection(int peer_socket) {
     }
 }
 
-// 監聽執行緒
+// Listener thread
 void* listen_thread(void* /* arg */) {
     while (client_running) {
         struct sockaddr_in peer_addr;
@@ -662,7 +662,7 @@ void* listen_thread(void* /* arg */) {
     return nullptr;
 }
 
-// ==================== 伺服器訊息接收執行緒 ====================
+// ==================== Server Receiver Thread ====================
 
 void* server_receive_thread(void* /* arg */) {
     while (client_running && server_socket >= 0) {
@@ -681,16 +681,16 @@ void* server_receive_thread(void* /* arg */) {
         
         if (message.empty()) continue;
         
-        // 判斷是推送訊息還是回應
+        // Decide whether this is a push or a response
         if (message.substr(0, 9) == "GROUPKEY:") {
-            // 群組金鑰更新 (推送) - 這是給已經在群組裡的成員的
+            // Group key update (push) - for members already in the group
             std::istringstream iss(message.substr(10));
             std::string room_id, key_b64, iv_b64;
             int version;
             iss >> room_id >> key_b64 >> iv_b64 >> version;
             
             std::lock_guard<std::mutex> lock(groups_mutex);
-            // 只有當群組已存在時才更新（新加入者會透過 GROUPJOINED 收到金鑰）
+            // Only update if we already know the group (new members get the key via GROUPJOINED)
             if (my_groups.find(room_id) != my_groups.end()) {
                 std::string key_data = base64_decode(key_b64);
                 std::string iv_data = base64_decode(iv_b64);
@@ -703,10 +703,10 @@ void* server_receive_thread(void* /* arg */) {
                           << " (v" << version << ")" << std::endl;
                 std::cout << "> " << std::flush;
             }
-            // 如果群組不存在，忽略此推送（新成員會從 GROUPJOINED 獲得金鑰）
+            // If the group is unknown, ignore this push (new members get the key from GROUPJOINED)
         }
         else if (message.substr(0, 13) == "GROUPMSGRECV:") {
-            // 群組訊息 (推送)
+            // Group message (push)
             std::istringstream iss(message.substr(14));
             std::string room_id, sender;
             iss >> room_id >> sender;
@@ -728,7 +728,7 @@ void* server_receive_thread(void* /* arg */) {
             }
         }
         else {
-            // 一般回應，放入 queue
+            // Regular response, push onto the queue
             {
                 std::lock_guard<std::mutex> lock(response_mutex);
                 response_queue.push(message);
@@ -737,12 +737,12 @@ void* server_receive_thread(void* /* arg */) {
         }
     }
     
-    // 通知所有等待中的執行緒
+    // Wake all waiting threads
     response_cv.notify_all();
     return nullptr;
 }
 
-// ==================== 連接到伺服器 ====================
+// ==================== Connect to Server ====================
 
 bool connect_to_server(const std::string& server_ip, int server_port) {
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -766,7 +766,7 @@ bool connect_to_server(const std::string& server_ip, int server_port) {
     
     std::cout << "[Client] Connected to server" << std::endl;
     
-    // Step 1: 接收伺服器公鑰
+    // Step 1: receive the server's public key
     std::string pubkey_msg = receive_line(server_socket);
     if (pubkey_msg.substr(0, 7) != "PUBKEY:") {
         std::cerr << "Failed to receive server public key" << std::endl;
@@ -787,7 +787,7 @@ bool connect_to_server(const std::string& server_ip, int server_port) {
         return false;
     }
     
-    // Step 2: 生成並發送 session key
+    // Step 2: generate and send the session key
     generate_random_key(server_session_key, AES_KEY_SIZE);
     generate_random_key(server_session_iv, AES_IV_SIZE);
     
@@ -797,7 +797,7 @@ bool connect_to_server(const std::string& server_ip, int server_port) {
     std::string key_msg = "SESSIONKEY:" + base64_encode(encrypted_key);
     send_plain(server_socket, key_msg);
     
-    // Step 3: 等待確認 (這裡還沒啟動接收執行緒，所以直接接收)
+    // Step 3: wait for acknowledgment (receiver thread not started yet, so read directly)
     std::string encoded = receive_line(server_socket);
     if (encoded.empty()) {
         std::cerr << "Failed to receive server response" << std::endl;
@@ -820,7 +820,7 @@ bool connect_to_server(const std::string& server_ip, int server_port) {
     return true;
 }
 
-// ==================== 建立監聽 socket ====================
+// ==================== Create Listening Socket ====================
 
 bool setup_listen_socket(int port) {
     listen_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -857,7 +857,7 @@ bool setup_listen_socket(int port) {
     return true;
 }
 
-// ==================== 顯示說明 ====================
+// ==================== Help ====================
 
 void print_help() {
     std::cout << "\n=== Available Commands ===" << std::endl;
@@ -878,7 +878,7 @@ void print_help() {
     std::cout << "==========================\n" << std::endl;
 }
 
-// ==================== 解析指令 ====================
+// ==================== Parse a command ====================
 
 std::vector<std::string> parse_input(const std::string& input) {
     std::vector<std::string> tokens;
@@ -890,7 +890,7 @@ std::vector<std::string> parse_input(const std::string& input) {
     return tokens;
 }
 
-// ==================== 主函式 ====================
+// ==================== Main ====================
 
 void signal_handler(int /* sig */) {
     std::cout << "\n[Client] Shutting down..." << std::endl;
@@ -915,35 +915,35 @@ int main(int argc, char* argv[]) {
     int server_port = std::atoi(argv[2]);
     int my_listen_port = std::atoi(argv[3]);
     
-    // 設定信號處理
+    // Set up signal handling
     signal(SIGINT, signal_handler);
     signal(SIGPIPE, SIG_IGN);
     
-    // 初始化 OpenSSL
+    // Initialize OpenSSL
     init_openssl();
     
-    // 建立監聽 socket
+    // Create the listening socket
     if (!setup_listen_socket(my_listen_port)) {
         return 1;
     }
     
-    // 連接到伺服器
+    // Connect to the server
     if (!connect_to_server(server_ip, server_port)) {
         close(listen_socket);
         return 1;
     }
     
-    // 啟動監聽執行緒
+    // Start the listener thread
     pthread_t listen_tid;
     pthread_create(&listen_tid, nullptr, listen_thread, nullptr);
     
-    // 啟動伺服器接收執行緒
+    // Start the server receiver thread
     pthread_t server_recv_tid;
     pthread_create(&server_recv_tid, nullptr, server_receive_thread, nullptr);
     
     print_help();
     
-    // 主迴圈
+    // Main loop
     std::string input;
     while (client_running) {
         std::cout << "> " << std::flush;
@@ -1038,7 +1038,7 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             
-            // 從伺服器取得用戶資訊
+            // Fetch user info from the server
             send_to_server("GETUSER " + target);
             std::string response = wait_for_response();
             
@@ -1107,7 +1107,7 @@ int main(int argc, char* argv[]) {
             std::string room_id = args[1];
             send_to_server("CREATEGROUP " + room_id);
             
-            // 等待回應，可能需要多次嘗試（跳過推送訊息）
+            // Wait for the response; may take several tries (skip pushed messages)
             std::string response;
             for (int i = 0; i < 5; i++) {
                 response = wait_for_response(2000);
@@ -1116,7 +1116,7 @@ int main(int argc, char* argv[]) {
                     response.substr(0, 5) == "ERROR") {
                     break;
                 }
-                // 收到其他訊息（如 GROUPKEY），放回 queue 或忽略
+                // Got another message (e.g. GROUPKEY); requeue or ignore
             }
             
             if (response.empty()) {
@@ -1155,7 +1155,7 @@ int main(int argc, char* argv[]) {
             std::string room_id = args[1];
             send_to_server("JOINGROUP " + room_id);
             
-            // 等待回應，可能需要多次嘗試（因為可能先收到 GROUPKEY 推送）
+            // Wait for the response; may take several tries (a GROUPKEY push may arrive first)
             std::string response;
             for (int i = 0; i < 5; i++) {
                 response = wait_for_response(2000);
@@ -1164,7 +1164,7 @@ int main(int argc, char* argv[]) {
                     response.substr(0, 5) == "ERROR") {
                     break;
                 }
-                // 收到其他訊息（如 GROUPKEY 推送給自己），忽略並繼續等待
+                // Got another message (e.g. our own GROUPKEY push); ignore and keep waiting
             }
             
             if (response.empty()) {
@@ -1237,7 +1237,7 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             
-            // 用群組金鑰加密訊息
+            // Encrypt the message with the group key
             std::string encrypted = aes_encrypt(message, it->second.group_key, it->second.group_iv);
             std::string encoded = base64_encode(encrypted);
             
@@ -1263,10 +1263,10 @@ int main(int argc, char* argv[]) {
     
     client_running = false;
     
-    // 通知等待的執行緒
+    // Wake waiting threads
     response_cv.notify_all();
     
-    // 關閉連線
+    // Close the connection
     if (server_socket >= 0) {
         close(server_socket);
     }
@@ -1274,7 +1274,7 @@ int main(int argc, char* argv[]) {
         close(listen_socket);
     }
     
-    // 關閉所有 peer 連線
+    // Close all peer connections
     {
         std::lock_guard<std::mutex> lock(peers_mutex);
         for (auto& pair : peer_sessions) {

@@ -1,12 +1,12 @@
 /**
  * Secure Chat Server
- * 實作功能：
- * 1. 多執行緒伺服器 (Worker Pool, 最多 10 個連線)
- * 2. 用戶註冊/登入/登出
- * 3. 列出線上用戶
- * 4. P2P 聊天發現服務
- * 5. 群組聊天 (Relay 模式)
- * 6. OpenSSL 加密通訊
+ * Features:
+ * 1. Multithreaded server (worker pool, up to 10 connections)
+ * 2. User registration / login / logout
+ * 3. List online users
+ * 4. Peer discovery for P2P chat
+ * 5. Group chat (relay mode)
+ * 6. Encrypted communication with OpenSSL
  */
 
 #include <iostream>
@@ -45,7 +45,7 @@
 #define AES_KEY_SIZE 32
 #define AES_IV_SIZE 16
 
-// ==================== 資料結構 ====================
+// ==================== Data Structures ====================
 
 struct UserInfo {
     std::string username;
@@ -69,12 +69,12 @@ struct GroupRoom {
     int key_version;
 };
 
-// ==================== 全域變數 ====================
+// ==================== Globals ====================
 
-std::map<std::string, UserInfo> registered_users;      // 已註冊用戶
-std::map<std::string, OnlineUser> online_users;        // 線上用戶
+std::map<std::string, UserInfo> registered_users;      // Registered users
+std::map<std::string, OnlineUser> online_users;        // Online users
 std::map<int, std::string> socket_to_user;             // socket fd -> username
-std::map<std::string, GroupRoom> group_rooms;          // 群組聊天室
+std::map<std::string, GroupRoom> group_rooms;          // Group chat rooms
 
 std::mutex users_mutex;
 std::mutex groups_mutex;
@@ -85,19 +85,19 @@ std::mutex queue_mutex;
 std::condition_variable queue_cv;
 std::atomic<bool> server_running(true);
 
-// RSA 金鑰
+// RSA key pair
 EVP_PKEY* server_private_key = nullptr;
 EVP_PKEY* server_public_key = nullptr;
 
-// ==================== 加密函式 ====================
+// ==================== Crypto Helpers ====================
 
-// 初始化 OpenSSL
+// Initialize OpenSSL
 void init_openssl() {
     OpenSSL_add_all_algorithms();
     ERR_load_crypto_strings();
 }
 
-// 生成 RSA 金鑰對
+// Generate RSA key pair
 bool generate_rsa_keypair() {
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr);
     if (!ctx) return false;
@@ -122,7 +122,7 @@ bool generate_rsa_keypair() {
     return true;
 }
 
-// 取得公鑰 PEM 字串
+// Get public key as a PEM string
 std::string get_public_key_pem() {
     BIO* bio = BIO_new(BIO_s_mem());
     PEM_write_bio_PUBKEY(bio, server_public_key);
@@ -134,7 +134,7 @@ std::string get_public_key_pem() {
     return result;
 }
 
-// AES-256-CBC 加密
+// AES-256-CBC encryption
 std::string aes_encrypt(const std::string& plaintext, 
                         const unsigned char* key, 
                         const unsigned char* iv) {
@@ -166,7 +166,7 @@ std::string aes_encrypt(const std::string& plaintext,
     return std::string((char*)ciphertext.data(), ciphertext_len);
 }
 
-// AES-256-CBC 解密
+// AES-256-CBC decryption
 std::string aes_decrypt(const std::string& ciphertext, 
                         const unsigned char* key, 
                         const unsigned char* iv) {
@@ -198,7 +198,7 @@ std::string aes_decrypt(const std::string& ciphertext,
     return std::string((char*)plaintext.data(), plaintext_len);
 }
 
-// RSA 解密 (用於解密客戶端傳來的 session key)
+// RSA decryption (decrypts the session key sent by the client)
 std::string rsa_decrypt(const std::string& ciphertext) {
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(server_private_key, nullptr);
     if (!ctx) return "";
@@ -231,7 +231,7 @@ std::string rsa_decrypt(const std::string& ciphertext) {
     return std::string((char*)out.data(), outlen);
 }
 
-// Base64 編碼
+// Base64 encode
 std::string base64_encode(const std::string& input) {
     BIO* bio = BIO_new(BIO_s_mem());
     BIO* b64 = BIO_new(BIO_f_base64());
@@ -248,7 +248,7 @@ std::string base64_encode(const std::string& input) {
     return result;
 }
 
-// Base64 解碼
+// Base64 decode
 std::string base64_decode(const std::string& input) {
     BIO* bio = BIO_new_mem_buf(input.c_str(), input.size());
     BIO* b64 = BIO_new(BIO_f_base64());
@@ -263,21 +263,21 @@ std::string base64_decode(const std::string& input) {
     return std::string(buffer.data(), len);
 }
 
-// 生成隨機金鑰
+// Generate a random key
 void generate_random_key(unsigned char* key, int size) {
     RAND_bytes(key, size);
 }
 
-// 生成群組金鑰
+// Generate a group key
 void generate_group_key(GroupRoom& room) {
     generate_random_key(room.group_key, AES_KEY_SIZE);
     generate_random_key(room.group_iv, AES_IV_SIZE);
     room.key_version++;
 }
 
-// ==================== 訊息處理 ====================
+// ==================== Messaging ====================
 
-// 發送訊息 (加密)
+// Send a message (encrypted)
 void send_encrypted(int socket_fd, const std::string& message, 
                     const unsigned char* key, const unsigned char* iv) {
     std::string encrypted = aes_encrypt(message, key, iv);
@@ -286,13 +286,13 @@ void send_encrypted(int socket_fd, const std::string& message,
     send(socket_fd, to_send.c_str(), to_send.size(), 0);
 }
 
-// 發送訊息 (明文，用於初始握手)
+// Send a message (plaintext, used for the initial handshake)
 void send_plain(int socket_fd, const std::string& message) {
     std::string to_send = message + "\n";
     send(socket_fd, to_send.c_str(), to_send.size(), 0);
 }
 
-// 接收訊息
+// Receive messages
 std::string receive_message(int socket_fd) {
     char buffer[MAX_BUFFER];
     memset(buffer, 0, MAX_BUFFER);
@@ -308,14 +308,14 @@ std::string receive_message(int socket_fd) {
         }
     }
     
-    // 移除尾部換行
+    // Strip trailing newline
     while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
         result.pop_back();
     }
     return result;
 }
 
-// 接收加密訊息
+// Receive an encrypted message
 std::string receive_encrypted(int socket_fd, 
                               const unsigned char* key, 
                               const unsigned char* iv) {
@@ -326,9 +326,9 @@ std::string receive_encrypted(int socket_fd,
     return aes_decrypt(encrypted, key, iv);
 }
 
-// ==================== 指令處理 ====================
+// ==================== Command Handlers ====================
 
-// 解析指令
+// Parse a command
 std::vector<std::string> parse_command(const std::string& cmd) {
     std::vector<std::string> tokens;
     std::istringstream iss(cmd);
@@ -339,7 +339,7 @@ std::vector<std::string> parse_command(const std::string& cmd) {
     return tokens;
 }
 
-// 註冊
+// Register
 std::string handle_register(const std::vector<std::string>& args) {
     if (args.size() < 3) {
         return "ERROR: Usage: REGISTER <username> <password>";
@@ -361,7 +361,7 @@ std::string handle_register(const std::vector<std::string>& args) {
     return "SUCCESS: User registered successfully";
 }
 
-// 登入
+// Login
 std::string handle_login(const std::vector<std::string>& args, 
                          int socket_fd, const std::string& client_ip,
                          const unsigned char* session_key,
@@ -412,7 +412,7 @@ std::string handle_login(const std::vector<std::string>& args,
     return "SUCCESS: Logged in successfully";
 }
 
-// 登出
+// Logout
 std::string handle_logout(int socket_fd) {
     std::lock_guard<std::mutex> lock(users_mutex);
     
@@ -423,13 +423,13 @@ std::string handle_logout(int socket_fd) {
     
     std::string username = it->second;
     
-    // 從所有群組移除
+    // Remove from all groups
     {
         std::lock_guard<std::mutex> glock(groups_mutex);
         for (auto& pair : group_rooms) {
             if (pair.second.members.count(username)) {
                 pair.second.members.erase(username);
-                generate_group_key(pair.second);  // 重新生成金鑰
+                generate_group_key(pair.second);  // Regenerate the key
             }
         }
     }
@@ -440,7 +440,7 @@ std::string handle_logout(int socket_fd) {
     return "SUCCESS: Logged out successfully";
 }
 
-// 列出線上用戶
+// List online users
 std::string handle_list_users() {
     std::lock_guard<std::mutex> lock(users_mutex);
     
@@ -455,7 +455,7 @@ std::string handle_list_users() {
     return result;
 }
 
-// 取得用戶資訊 (IP 和 Port)
+// Get user info (IP and port)
 std::string handle_get_user_info(const std::vector<std::string>& args) {
     if (args.size() < 2) {
         return "ERROR: Usage: GETUSER <username>";
@@ -473,7 +473,7 @@ std::string handle_get_user_info(const std::vector<std::string>& args) {
     return "USERINFO: " + it->second.ip + " " + std::to_string(it->second.listen_port);
 }
 
-// 建立群組
+// Create a group
 std::string handle_create_group(const std::vector<std::string>& args, int socket_fd) {
     if (args.size() < 2) {
         return "ERROR: Usage: CREATEGROUP <room_id>";
@@ -505,14 +505,14 @@ std::string handle_create_group(const std::vector<std::string>& args, int socket
     
     group_rooms[room_id] = room;
     
-    // 回傳群組金鑰
+    // Return the group key
     std::string key_b64 = base64_encode(std::string((char*)room.group_key, AES_KEY_SIZE));
     std::string iv_b64 = base64_encode(std::string((char*)room.group_iv, AES_IV_SIZE));
     
     return "GROUPCREATED: " + room_id + " " + key_b64 + " " + iv_b64 + " " + std::to_string(room.key_version);
 }
 
-// 加入群組
+// Join a group
 std::string handle_join_group(const std::vector<std::string>& args, int socket_fd) {
     if (args.size() < 2) {
         return "ERROR: Usage: JOINGROUP <room_id>";
@@ -542,18 +542,18 @@ std::string handle_join_group(const std::vector<std::string>& args, int socket_f
     }
     
     it->second.members.insert(username);
-    generate_group_key(it->second);  // 重新生成金鑰
+    generate_group_key(it->second);  // Regenerate the key
     
-    // 準備金鑰資訊
+    // Prepare key info
     std::string key_b64 = base64_encode(std::string((char*)it->second.group_key, AES_KEY_SIZE));
     std::string iv_b64 = base64_encode(std::string((char*)it->second.group_iv, AES_IV_SIZE));
     std::string new_key_msg = "GROUPKEY: " + room_id + " " + key_b64 + " " + iv_b64 + " " + std::to_string(it->second.key_version);
     
-    // 只通知其他成員新金鑰（不包括剛加入的人，他會從 GROUPJOINED 獲得金鑰）
+    // Notify only the other members of the new key (the new member gets it from GROUPJOINED)
     {
         std::lock_guard<std::mutex> ulock(users_mutex);
         for (const std::string& member : it->second.members) {
-            if (member != username) {  // 跳過剛加入的人
+            if (member != username) {  // Skip the member who just joined
                 auto user_it = online_users.find(member);
                 if (user_it != online_users.end()) {
                     send_encrypted(user_it->second.socket_fd, new_key_msg,
@@ -566,7 +566,7 @@ std::string handle_join_group(const std::vector<std::string>& args, int socket_f
     return "GROUPJOINED: " + room_id + " " + key_b64 + " " + iv_b64 + " " + std::to_string(it->second.key_version);
 }
 
-// 離開群組
+// Leave a group
 std::string handle_leave_group(const std::vector<std::string>& args, int socket_fd) {
     if (args.size() < 2) {
         return "ERROR: Usage: LEAVEGROUP <room_id>";
@@ -602,9 +602,9 @@ std::string handle_leave_group(const std::vector<std::string>& args, int socket_
         return "SUCCESS: Left room (room deleted)";
     }
     
-    generate_group_key(it->second);  // 重新生成金鑰
+    generate_group_key(it->second);  // Regenerate the key
     
-    // 通知剩餘成員新金鑰
+    // Notify remaining members of the new key
     std::string key_b64 = base64_encode(std::string((char*)it->second.group_key, AES_KEY_SIZE));
     std::string iv_b64 = base64_encode(std::string((char*)it->second.group_iv, AES_IV_SIZE));
     std::string new_key_msg = "GROUPKEY: " + room_id + " " + key_b64 + " " + iv_b64 + " " + std::to_string(it->second.key_version);
@@ -623,7 +623,7 @@ std::string handle_leave_group(const std::vector<std::string>& args, int socket_
     return "SUCCESS: Left room";
 }
 
-// 群組訊息 (Relay)
+// Group message (relay)
 std::string handle_group_message(const std::vector<std::string>& args, int socket_fd, const std::string& full_cmd) {
     if (args.size() < 3) {
         return "ERROR: Usage: GROUPMSG <room_id> <encrypted_message>";
@@ -632,7 +632,7 @@ std::string handle_group_message(const std::vector<std::string>& args, int socke
     std::string room_id = args[1];
     std::string username;
     
-    // 取得加密的訊息內容 (已經由客戶端用群組金鑰加密)
+    // Get the encrypted payload (already encrypted by the client with the group key)
     size_t msg_start = full_cmd.find(room_id) + room_id.length() + 1;
     std::string encrypted_msg = full_cmd.substr(msg_start);
     
@@ -656,13 +656,13 @@ std::string handle_group_message(const std::vector<std::string>& args, int socke
         return "ERROR: Not in room";
     }
     
-    // 轉發訊息給所有成員 (伺服器不解密，保持端對端加密)
+    // Relay to all members (the server never decrypts, preserving end-to-end encryption)
     std::string relay_msg = "GROUPMSGRECV: " + room_id + " " + username + " " + encrypted_msg;
     
     {
         std::lock_guard<std::mutex> ulock(users_mutex);
         for (const std::string& member : it->second.members) {
-            if (member != username) {  // 不發給自己
+            if (member != username) {  // Don't send back to the sender
                 auto user_it = online_users.find(member);
                 if (user_it != online_users.end()) {
                     send_encrypted(user_it->second.socket_fd, relay_msg,
@@ -675,7 +675,7 @@ std::string handle_group_message(const std::vector<std::string>& args, int socke
     return "SUCCESS: Message sent";
 }
 
-// 列出群組
+// List groups
 std::string handle_list_groups() {
     std::lock_guard<std::mutex> lock(groups_mutex);
     
@@ -690,16 +690,16 @@ std::string handle_list_groups() {
     return result;
 }
 
-// ==================== 客戶端處理 ====================
+// ==================== Client Handling ====================
 
 void handle_client(int client_socket, const std::string& client_ip) {
     std::cout << "[Server] New connection from " << client_ip << std::endl;
     
-    // Step 1: 發送伺服器公鑰
+    // Step 1: send the server's public key
     std::string pubkey_pem = get_public_key_pem();
     send_plain(client_socket, "PUBKEY:" + base64_encode(pubkey_pem));
     
-    // Step 2: 接收客戶端加密的 session key
+    // Step 2: receive the client's encrypted session key
     std::string encrypted_key_msg = receive_message(client_socket);
     if (encrypted_key_msg.empty() || encrypted_key_msg.substr(0, 11) != "SESSIONKEY:") {
         std::cerr << "[Server] Failed to receive session key" << std::endl;
@@ -722,12 +722,12 @@ void handle_client(int client_socket, const std::string& client_ip) {
     memcpy(session_key, session_data.c_str(), AES_KEY_SIZE);
     memcpy(session_iv, session_data.c_str() + AES_KEY_SIZE, AES_IV_SIZE);
     
-    // 確認握手成功
+    // Confirm the handshake succeeded
     send_encrypted(client_socket, "READY", session_key, session_iv);
     
     std::cout << "[Server] Secure session established with " << client_ip << std::endl;
     
-    // 主迴圈
+    // Main loop
     while (server_running) {
         std::string message = receive_encrypted(client_socket, session_key, session_iv);
         if (message.empty()) {
@@ -776,7 +776,7 @@ void handle_client(int client_socket, const std::string& client_ip) {
         send_encrypted(client_socket, response, session_key, session_iv);
     }
     
-    // 清理
+    // Cleanup
     {
         std::lock_guard<std::mutex> lock(users_mutex);
         auto it = socket_to_user.find(client_socket);
@@ -785,7 +785,7 @@ void handle_client(int client_socket, const std::string& client_ip) {
             online_users.erase(username);
             socket_to_user.erase(client_socket);
             
-            // 從群組移除
+            // Remove from groups
             std::lock_guard<std::mutex> glock(groups_mutex);
             for (auto& pair : group_rooms) {
                 if (pair.second.members.count(username)) {
@@ -800,7 +800,7 @@ void handle_client(int client_socket, const std::string& client_ip) {
     std::cout << "[Server] Connection closed: " << client_ip << std::endl;
 }
 
-// Worker 執行緒函式
+// Worker thread function
 void* worker_thread(void* /* arg */) {
     while (server_running) {
         int client_socket = -1;
@@ -832,7 +832,7 @@ void* worker_thread(void* /* arg */) {
     return nullptr;
 }
 
-// ==================== 主函式 ====================
+// ==================== Main ====================
 
 void signal_handler(int /* sig */) {
     std::cout << "\n[Server] Shutting down..." << std::endl;
@@ -846,32 +846,32 @@ int main(int argc, char* argv[]) {
         port = std::atoi(argv[1]);
     }
     
-    // 設定信號處理
+    // Set up signal handling
     signal(SIGINT, signal_handler);
     signal(SIGPIPE, SIG_IGN);
     
-    // 初始化 OpenSSL
+    // Initialize OpenSSL
     init_openssl();
     
-    // 生成 RSA 金鑰對
+    // Generate RSA key pair
     if (!generate_rsa_keypair()) {
         std::cerr << "[Server] Failed to generate RSA keypair" << std::endl;
         return 1;
     }
     std::cout << "[Server] RSA keypair generated" << std::endl;
     
-    // 建立 socket
+    // Create socket
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0) {
         std::cerr << "[Server] Failed to create socket" << std::endl;
         return 1;
     }
     
-    // 設定 socket 選項
+    // Set socket options
     int opt = 1;
     setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     
-    // 綁定地址
+    // Bind address
     struct sockaddr_in server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
@@ -884,7 +884,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    // 監聽
+    // Listen
     if (listen(server_socket, 10) < 0) {
         std::cerr << "[Server] Failed to listen" << std::endl;
         close(server_socket);
@@ -893,14 +893,14 @@ int main(int argc, char* argv[]) {
     
     std::cout << "[Server] Listening on port " << port << std::endl;
     
-    // 建立 worker 執行緒池
+    // Create the worker thread pool
     pthread_t workers[MAX_WORKERS];
     for (int i = 0; i < MAX_WORKERS; i++) {
         pthread_create(&workers[i], nullptr, worker_thread, nullptr);
     }
     std::cout << "[Server] Worker pool created (" << MAX_WORKERS << " workers)" << std::endl;
     
-    // 接受連線
+    // Accept connections
     while (server_running) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
@@ -913,7 +913,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
         
-        // 加入任務佇列
+        // Push onto the task queue
         {
             std::lock_guard<std::mutex> lock(queue_mutex);
             task_queue.push(client_socket);
@@ -921,7 +921,7 @@ int main(int argc, char* argv[]) {
         queue_cv.notify_one();
     }
     
-    // 等待 worker 執行緒結束
+    // Wait for worker threads to finish
     queue_cv.notify_all();
     for (int i = 0; i < MAX_WORKERS; i++) {
         pthread_join(workers[i], nullptr);
